@@ -1,0 +1,93 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>画像内の球カウンター</title>
+	<style>
+		body { font-family: sans-serif; text-align: center; }
+		#counter { font-size: 2em; margin: 1em; }
+		#canvasWrapper { display: inline-block; position: relative; }
+		canvas { border: 1px solid #888; cursor: crosshair; }
+		#controls { margin-bottom: 1em; }
+		#undoBtn { margin-left: 1em; }
+	</style>
+</head>
+<body>
+	<div id="controls">
+		<input type="file" id="imgInput" accept="image/*">
+		<button id="undoBtn">戻る</button>
+	</div>
+	<div id="counter">球の数: <span id="count">0</span></div>
+	<div id="canvasWrapper">
+		<canvas id="imgCanvas"></canvas>
+	</div>
+	<script>
+	const imgInput = document.getElementById('imgInput');
+	const canvas = document.getElementById('imgCanvas');
+	const ctx = canvas.getContext('2d');
+	const countSpan = document.getElementById('count');
+	const undoBtn = document.getElementById('undoBtn');
+	let img = new window.Image();
+	let markers = [];
+
+	imgInput.addEventListener('change', e => {
+		const file = e.target.files[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = function(ev) {
+			img.onload = function() {
+				canvas.width = img.width;
+				canvas.height = img.height;
+				drawAll();
+			};
+			img.src = ev.target.result;
+		};
+		reader.readAsDataURL(file);
+		markers = [];
+		updateCount();
+	});
+
+	function drawAll() {
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ctx.drawImage(img, 0, 0);
+		for (const m of markers) {
+			drawMarker(m.x, m.y);
+		}
+	}
+
+	function drawMarker(x, y) {
+	ctx.beginPath();
+	ctx.arc(x, y, 5, 0, 2 * Math.PI); // 半径を12→8に変更
+	ctx.fillStyle = 'rgba(255,0,0,0.8)';
+	ctx.fill();
+	ctx.strokeStyle = '#fff';
+	ctx.lineWidth = 2;
+	ctx.stroke();
+	}
+
+	canvas.addEventListener('click', e => {
+		if (!img.src) return;
+		const rect = canvas.getBoundingClientRect();
+		const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+		const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+		markers.push({x, y});
+		drawAll();
+		updateCount();
+	});
+
+	function updateCount() {
+		countSpan.textContent = markers.length;
+	}
+
+	undoBtn.addEventListener('click', () => {
+		if (markers.length > 0) {
+			markers.pop();
+			drawAll();
+			updateCount();
+		}
+	});
+	</script>
+</body>
+</html>
