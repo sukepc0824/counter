@@ -3,11 +3,11 @@
 <html lang="ja">
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
 	<title>Counter</title>
 	<style>
 		body { font-family: sans-serif; text-align: center; }
-		#counter { font-size: 1em; margin: 1em; }
+		#counter { font-size: 1.2em; margin: 1.2em; }
 		#canvasWrapper { display: inline-block; position: relative; }
 		canvas {
 			border: 1px solid #888;
@@ -16,10 +16,26 @@
 			max-width: 100%;
 			height: auto;
 			display: block;
+			touch-action: none; /* Prevent scrolling/zooming on iPad */
+			-webkit-touch-callout: none;
+			-webkit-user-select: none;
+			user-select: none;
 		}
-		#controls { margin-bottom: 1em; }
-		#undoBtn { margin-left: 1em; }
+		#controls { margin-bottom: 1.5em; }
+		#undoBtn, #imgInput {
+			margin-left: 1em;
+			font-size: 1.2em;
+			min-width: 48px;
+			min-height: 48px;
+			touch-action: manipulation;
+		}
+		#undoBtn:active, #imgInput:active {
+			background: #eee;
+		}
 	</style>
+	<!-- Prevent double-tap zoom on iOS -->
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
 	<div id="controls">
@@ -85,8 +101,14 @@
 		ctx.stroke(); 
 	}
 
+
+	// Only allow stylus or finger, ignore right-click/secondary
 	canvas.addEventListener('pointerdown', e => {
 		if (!img.src) return;
+		// Only allow pen or touch input
+		if (e.pointerType !== 'pen' && e.pointerType !== 'touch') return;
+		// Prevent double-tap zoom and scrolling
+		e.preventDefault();
 		const rect = canvas.getBoundingClientRect();
 		const x = (e.clientX - rect.left) * (canvas.width / rect.width);
 		const y = (e.clientY - rect.top) * (canvas.height / rect.height);
@@ -99,13 +121,17 @@
 		countSpan.textContent = markers.length;
 	}
 
-	undoBtn.addEventListener('pointerdown', () => { 
-		if (markers.length > 0) { 
-			markers.pop(); 
-			drawAll(); 
-			updateCount(); 
-		} 
-	}); 
+
+	undoBtn.addEventListener('pointerdown', e => {
+		// Only allow pen or touch input
+		if (e.pointerType && e.pointerType !== 'pen' && e.pointerType !== 'touch') return;
+		e.preventDefault();
+		if (markers.length > 0) {
+			markers.pop();
+			drawAll();
+			updateCount();
+		}
+	});
 
 	// ウィンドウリサイズ時もcanvasを横幅100%で再調整 
 	window.addEventListener('resize', () => { 
