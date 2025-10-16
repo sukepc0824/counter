@@ -1,162 +1,138 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-	<title>Counter</title>
-	<style>
-		body { font-family: sans-serif; text-align: center; }
-		#counter { font-size: 1.2em; margin: 1.2em; }
-		#canvasWrapper { display: inline-block; position: relative; }
-		canvas {
-			border: 1px solid #888;
-			cursor: crosshair;
-			width: 100vw;
-			max-width: 100%;
-			height: auto;
-			display: block;
-			-webkit-user-select: none;
-			user-select: none;
-		}
-		#controls { margin-bottom: 1.5em; }
-		#undoBtn, #imgInput {
-			margin-left: 1em;
-			font-size: 1.2em;
-			min-width: 48px;
-			min-height: 48px;
-			touch-action: manipulation;
-		}
-		#undoBtn:active, #imgInput:active {
-			background: #eee;
-		}
-	</style>
-	<!-- Prevent double-tap zoom on iOS -->
-	<meta name="apple-mobile-web-app-capable" content="yes">
-	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<title>HTML Only Counter</title>
+<style>
+  body {
+    font-family: sans-serif;
+    text-align: center;
+  }
+  #controls {
+    margin-bottom: 1em;
+  }
+  #counter {
+    margin-bottom: 1em;
+    font-size: 1.2em;
+  }
+  #imageWrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    touch-action: manipulation; /* スクロールやズームを抑制しない */
+  }
+  #mainImg {
+    width: 100vw;
+    height: auto;
+    display: block;
+  }
+  .marker {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(255, 0, 0, 0.8);
+    border: 2px solid #fff;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  button, input[type="file"] {
+    font-size: 1.2em;
+    margin: 0 0.5em;
+  }
+</style>
 </head>
 <body>
-	<div id="controls">
-		<input type="file" id="imgInput" accept="image/*">
-		<button id="undoBtn">戻る</button>
-			<input type="range" name="size" id="size" min="0" max="100" value="10">
-	</div>
-	<div id="counter">数: <span id="count">0</span></div>
-	<div id="canvasWrapper">
-		<canvas id="imgCanvas"></canvas>
-	</div>
-	<script>
+  <div id="controls">
+    <input type="file" id="imgInput" accept="image/*">
+    <button id="undoBtn">戻る</button>
+  </div>
+
+  <div id="counter">数: <span id="count">0</span></div>
+
+  <div id="imageWrapper">
+    <img id="mainImg" src="" alt="">
+  </div>
+
+<script>
 const imgInput = document.getElementById('imgInput');
-const canvas = document.getElementById('imgCanvas');
-const ctx = canvas.getContext('2d');
+const mainImg = document.getElementById('mainImg');
+const wrapper = document.getElementById('imageWrapper');
 const countSpan = document.getElementById('count');
 const undoBtn = document.getElementById('undoBtn');
-let img = new window.Image(); 
-let markers = []; 
-let imgNatural = { width: 0, height: 0 }; 
 
-function resizeCanvasToWindow() {
-	if (!imgNatural.width) return;
-	const winW = window.innerWidth;
-	const scale = winW / imgNatural.width;
-	canvas.width = winW;
-	canvas.height = imgNatural.height * scale;
-}
-
-imgInput.addEventListener('change', e => {
-	const file = e.target.files[0];
-	if (!file) return;
-	const reader = new FileReader();
-	reader.onload = function(ev) {
-		img.onload = function() {
-			imgNatural.width = img.width;
-			imgNatural.height = img.height;
-			resizeCanvasToWindow();
-			drawAll();
-		};
-		img.src = ev.target.result;
-	};
-	reader.readAsDataURL(file);
-	markers = [];
-	updateCount();
-});
-
-function drawAll() {
-	ctx.clearRect(0, 0, canvas.width, canvas.height); 
-	if (!imgNatural.width) return; 
-	ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
-	for (const m of markers) drawMarker(m.x, m.y); 
-}
-
-function drawMarker(x, y) {
-	ctx.beginPath(); 
-	ctx.arc(x, y, 8, 0, 2 * Math.PI); 
-	ctx.fillStyle = 'rgba(255,0,0,0.8)'; 
-	ctx.fill(); 
-	ctx.strokeStyle = '#fff'; 
-	ctx.lineWidth = 2; 
-	ctx.stroke(); 
-}
-
-// ===== タップ誤判定防止用 =====
+let markers = [];
 let startPos = null;
 let moved = false;
 
-canvas.addEventListener('pointerdown', e => {
-	if (!img.src) return;
-	if (e.pointerType === 'mouse' && e.button !== 0) return; // 右クリックなど無視
-	if (!e.isPrimary) return; // 複数指は除外（ピンチズーム対策）
-
-	startPos = { x: e.clientX, y: e.clientY };
-	moved = false;
+// 画像選択
+imgInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    mainImg.src = ev.target.result;
+    markers = [];
+    clearMarkers();
+    updateCount();
+  };
+  reader.readAsDataURL(file);
 });
 
-canvas.addEventListener('pointermove', e => {
-	if (!startPos) return;
-	// スクロールやドラッグなどで一定距離動いたらカウント対象外に
-	const dx = e.clientX - startPos.x;
-	const dy = e.clientY - startPos.y;
-	if (Math.sqrt(dx * dx + dy * dy) > 10) {
-		moved = true;
-	}
+function clearMarkers() {
+  wrapper.querySelectorAll('.marker').forEach(m => m.remove());
+}
+
+function updateCount() {
+  countSpan.textContent = markers.length;
+}
+
+// === タップ検出 ===
+wrapper.addEventListener('pointerdown', e => {
+  if (!mainImg.src) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return; // 右クリック除外
+  if (!e.isPrimary) return; // 複数指操作除外
+  startPos = { x: e.clientX, y: e.clientY };
+  moved = false;
 });
 
-canvas.addEventListener('pointerup', e => {
-	if (!img.src || moved || !startPos) return;
-	e.preventDefault();
+wrapper.addEventListener('pointermove', e => {
+  if (!startPos) return;
+  const dx = e.clientX - startPos.x;
+  const dy = e.clientY - startPos.y;
+  if (Math.sqrt(dx*dx + dy*dy) > 10) {
+    moved = true; // スクロール・ドラッグ扱い
+  }
+});
 
-	const rect = canvas.getBoundingClientRect();
-	const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-	const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+wrapper.addEventListener('pointerup', e => {
+  if (!mainImg.src || moved || !startPos) return;
+  e.preventDefault();
 
-	markers.push({x, y});
-	drawAll();
-	updateCount();
-	startPos = null;
+  const rect = mainImg.getBoundingClientRect();
+  const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+  const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+
+  const marker = document.createElement('div');
+  marker.className = 'marker';
+  marker.style.left = `${xPercent}%`;
+  marker.style.top = `${yPercent}%`;
+  wrapper.appendChild(marker);
+
+  markers.push({ x: xPercent, y: yPercent });
+  updateCount();
+  startPos = null;
 });
 
 // 戻るボタン
-undoBtn.addEventListener('pointerdown', e => {
-	e.preventDefault();
-	if (markers.length > 0) {
-		markers.pop();
-		drawAll();
-		updateCount();
-	}
+undoBtn.addEventListener('click', () => {
+  if (markers.length === 0) return;
+  markers.pop();
+  const lastMarker = wrapper.querySelector('.marker:last-of-type');
+  if (lastMarker) lastMarker.remove();
+  updateCount();
 });
-
-function updateCount() {
-	countSpan.textContent = markers.length;
-}
-
-// リサイズ対応
-window.addEventListener('resize', () => { 
-	if (!imgNatural.width) return; 
-	resizeCanvasToWindow(); 
-	drawAll(); 
-});
-
-
-	</script>
+</script>
 </body>
 </html>
