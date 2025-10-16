@@ -47,13 +47,13 @@
       height: 10px;
       border-radius: 50%;
       background: rgba(255, 0, 0, 0.8);
-      outline: 2px solid #fff;
+      outline: 0.8px solid #fff;
       transform: translate(-50%, -50%);
       pointer-events: none;
     }
 
     .marker.temp {
-      opacity: 0.6;
+      opacity: 1;
       filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
     }
 
@@ -69,7 +69,7 @@
   <div id="controls">
     <input type="file" id="imgInput" accept="image/*">
     数: <div id="counter"><span id="count">0</span></div>
-    大きさ: <input type="range" name="size" id="sizeInput" value="10" min="2" max="40">
+    大きさ: <input type="range" name="size" id="sizeInput" value="4" min="0.5" max="10">
     <button id="undoBtn">戻る</button>
   </div>
 
