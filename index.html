@@ -39,104 +39,124 @@
 	<div id="controls">
 		<input type="file" id="imgInput" accept="image/*">
 		<button id="undoBtn">戻る</button>
+			<input type="range" name="size" id="size" min="0" max="100" value="10">
 	</div>
 	<div id="counter">数: <span id="count">0</span></div>
 	<div id="canvasWrapper">
 		<canvas id="imgCanvas"></canvas>
 	</div>
 	<script>
-	const imgInput = document.getElementById('imgInput');
-	const canvas = document.getElementById('imgCanvas');
-	const ctx = canvas.getContext('2d');
-	const countSpan = document.getElementById('count');
-	const undoBtn = document.getElementById('undoBtn');
-	let img = new window.Image(); 
-	let markers = []; 
-	let imgNatural = { width: 0, height: 0 }; 
+const imgInput = document.getElementById('imgInput');
+const canvas = document.getElementById('imgCanvas');
+const ctx = canvas.getContext('2d');
+const countSpan = document.getElementById('count');
+const undoBtn = document.getElementById('undoBtn');
+let img = new window.Image(); 
+let markers = []; 
+let imgNatural = { width: 0, height: 0 }; 
 
-	function resizeCanvasToWindow() {
-		if (!imgNatural.width) return;
-		const winW = window.innerWidth;
-		const scale = winW / imgNatural.width;
-		canvas.width = winW;
-		canvas.height = imgNatural.height * scale;
-	}
+function resizeCanvasToWindow() {
+	if (!imgNatural.width) return;
+	const winW = window.innerWidth;
+	const scale = winW / imgNatural.width;
+	canvas.width = winW;
+	canvas.height = imgNatural.height * scale;
+}
 
-	imgInput.addEventListener('change', e => {
-		const file = e.target.files[0];
-		if (!file) return;
-		const reader = new FileReader();
-		reader.onload = function(ev) {
-			img.onload = function() {
-				imgNatural.width = img.width;
-				imgNatural.height = img.height;
-				resizeCanvasToWindow();
-				drawAll();
-			};
-			img.src = ev.target.result;
+imgInput.addEventListener('change', e => {
+	const file = e.target.files[0];
+	if (!file) return;
+	const reader = new FileReader();
+	reader.onload = function(ev) {
+		img.onload = function() {
+			imgNatural.width = img.width;
+			imgNatural.height = img.height;
+			resizeCanvasToWindow();
+			drawAll();
 		};
-		reader.readAsDataURL(file);
-		markers = [];
-		updateCount();
-	});
+		img.src = ev.target.result;
+	};
+	reader.readAsDataURL(file);
+	markers = [];
+	updateCount();
+});
 
-	function drawAll() {
-		ctx.clearRect(0, 0, canvas.width, canvas.height); 
-		if (!imgNatural.width) return; 
-		ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
-		for (const m of markers) { 
-			drawMarker(m.x, m.y); 
-		} 
+function drawAll() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height); 
+	if (!imgNatural.width) return; 
+	ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
+	for (const m of markers) drawMarker(m.x, m.y); 
+}
+
+function drawMarker(x, y) {
+	ctx.beginPath(); 
+	ctx.arc(x, y, 8, 0, 2 * Math.PI); 
+	ctx.fillStyle = 'rgba(255,0,0,0.8)'; 
+	ctx.fill(); 
+	ctx.strokeStyle = '#fff'; 
+	ctx.lineWidth = 2; 
+	ctx.stroke(); 
+}
+
+// ===== タップ誤判定防止用 =====
+let startPos = null;
+let moved = false;
+
+canvas.addEventListener('pointerdown', e => {
+	if (!img.src) return;
+	if (e.pointerType === 'mouse' && e.button !== 0) return; // 右クリックなど無視
+	if (!e.isPrimary) return; // 複数指は除外（ピンチズーム対策）
+
+	startPos = { x: e.clientX, y: e.clientY };
+	moved = false;
+});
+
+canvas.addEventListener('pointermove', e => {
+	if (!startPos) return;
+	// スクロールやドラッグなどで一定距離動いたらカウント対象外に
+	const dx = e.clientX - startPos.x;
+	const dy = e.clientY - startPos.y;
+	if (Math.sqrt(dx * dx + dy * dy) > 10) {
+		moved = true;
 	}
+});
 
-	function drawMarker(x, y) {
-		ctx.beginPath(); 
-		ctx.arc(x, y, 8, 0, 2 * Math.PI); 
-		ctx.fillStyle = 'rgba(255,0,0,0.8)'; 
-		ctx.fill(); 
-		ctx.strokeStyle = '#fff'; 
-		ctx.lineWidth = 2; 
-		ctx.stroke(); 
-	}
+canvas.addEventListener('pointerup', e => {
+	if (!img.src || moved || !startPos) return;
+	e.preventDefault();
 
+	const rect = canvas.getBoundingClientRect();
+	const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+	const y = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-	// Only allow stylus or finger, ignore right-click/secondary
-	canvas.addEventListener('pointerdown', e => {
-		if (!img.src) return;
-		// Only allow pen or touch input
-		if (e.pointerType !== 'pen' && e.pointerType !== 'touch') return;
-		// Prevent double-tap zoom and scrolling
-		e.preventDefault();
-		const rect = canvas.getBoundingClientRect();
-		const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-		const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-		markers.push({x, y});
+	markers.push({x, y});
+	drawAll();
+	updateCount();
+	startPos = null;
+});
+
+// 戻るボタン
+undoBtn.addEventListener('pointerdown', e => {
+	e.preventDefault();
+	if (markers.length > 0) {
+		markers.pop();
 		drawAll();
 		updateCount();
-	});
-
-	function updateCount() {
-		countSpan.textContent = markers.length;
 	}
+});
+
+function updateCount() {
+	countSpan.textContent = markers.length;
+}
+
+// リサイズ対応
+window.addEventListener('resize', () => { 
+	if (!imgNatural.width) return; 
+	resizeCanvasToWindow(); 
+	drawAll(); 
+});
 
 
-	undoBtn.addEventListener('pointerdown', e => {
-		// Only allow pen or touch input
-		if (e.pointerType && e.pointerType !== 'pen' && e.pointerType !== 'touch') return;
-		e.preventDefault();
-		if (markers.length > 0) {
-			markers.pop();
-			drawAll();
-			updateCount();
-		}
-	});
-
-	// ウィンドウリサイズ時もcanvasを横幅100%で再調整 
-	window.addEventListener('resize', () => { 
-		if (!imgNatural.width) return; 
-		resizeCanvasToWindow(); 
-		drawAll(); 
-	}); 
 	</script>
 </body>
 </html>
