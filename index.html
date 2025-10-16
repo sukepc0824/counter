@@ -1,60 +1,28 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
 <title>colony counter</title>
 <style>
-  body {
-    font-family: sans-serif;
-    text-align: center;
-  }
-  #controls {
-    margin-bottom: 1em;
-	display: flex;
-	align-items: center;
-	justify-content:	center ;
-	gap: 10px;
-  }
-  #counter {
-    font-size: 1.2em;
-  }
-  #imageWrapper {
-    position: relative;
-    display: inline-block;
-    max-width: 100%;
-    touch-action: manipulation; /* スクロールやズームを抑制しない */
-  }
-  #mainImg {
-    width: 100vw;
-    height: auto;
-    display: block;
-  }
-  .marker {
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: rgba(255, 0, 0, 0.8);
-    border: 2px solid #fff;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-  }
-  button, input[type="file"] {
-    font-size: 1.2em;
-    margin: 0 0.5em;
-  }
+  body { font-family: sans-serif; text-align: center; }
+  #controls { margin-bottom: 1em; display:flex; align-items:center; justify-content:center; gap:10px; }
+  #counter { font-size:1.2em; }
+  #imageWrapper { position: relative; display: inline-block; max-width: 100%; touch-action: manipulation; /* ズームやスクロールを妨げない */ }
+  #mainImg { width: 100vw; height: auto; display: block; user-select: none; -webkit-user-drag: none; }
+  .marker { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: rgba(255,0,0,0.8); border: 2px solid #fff; transform: translate(-50%, -50%); pointer-events: none; }
+  .marker.temp { opacity: 0.6; filter: drop-shadow(0 0 2px rgba(0,0,0,0.6)); }
+  button, input[type="file"] { font-size: 1.2em; margin: 0 0.5em; }
 </style>
 </head>
 <body>
   <div id="controls">
     <input type="file" id="imgInput" accept="image/*">
-	数:
-	<div id="counter"><span id="count">0</span></div>
-	大きさ:
-	<input type="range" name="size" id="sizeInput" value="10" min="2" max="18">
-	<button id="undoBtn">戻る</button>
+    数: <div id="counter"><span id="count">0</span></div>
+    大きさ: <input type="range" name="size" id="sizeInput" value="10" min="2" max="40">
+    <button id="undoBtn">戻る</button>
   </div>
+
   <div id="imageWrapper">
     <img id="mainImg" src="" alt="">
   </div>
@@ -67,14 +35,15 @@ const countSpan = document.getElementById('count');
 const undoBtn = document.getElementById('undoBtn');
 const sizeInput = document.getElementById('sizeInput');
 
-let markers = [];
+let markers = []; // {x: percent, y: percent}
 let startPos = null;
 let moved = false;
 let tempMarker = null;
+let activePointers = new Set();
 
-// 画像選択
+// --- 画像選択 ---
 imgInput.addEventListener('change', e => {
-  const file = e.target.files[0];
+  const file = e.target.files && e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = ev => {
@@ -86,92 +55,187 @@ imgInput.addEventListener('change', e => {
   reader.readAsDataURL(file);
 });
 
+// --- ユーティリティ ---
 function clearMarkers() {
   wrapper.querySelectorAll('.marker').forEach(m => m.remove());
 }
+function updateCount() { countSpan.textContent = markers.length; }
 
-function updateCount() {
-  countSpan.textContent = markers.length;
-}
-
-// === マーカー描画関数 ===
-function createMarker(xPercent, yPercent) {
+// マーカー作成（percent座標）
+// `isTemp` が true のときは .temp クラスを付ける（押下中の仮マーカー）
+function createMarker(xPercent, yPercent, isTemp = false) {
   const marker = document.createElement('div');
-  marker.className = 'marker';
+  marker.className = 'marker' + (isTemp ? ' temp' : '');
   marker.style.width = sizeInput.value + 'px';
   marker.style.height = sizeInput.value + 'px';
-  marker.style.left = `${xPercent}%`;
-  marker.style.top = `${yPercent}%`;
+  marker.style.left = xPercent + '%';
+  marker.style.top = yPercent + '%';
+  // データ保持（必要なら後で rebuild しやすい）
+  marker.dataset.x = String(xPercent);
+  marker.dataset.y = String(yPercent);
   wrapper.appendChild(marker);
   return marker;
 }
 
-// === ポインタ操作 ===
+// 確定マーカーを再描画（必要なら利用可能）
+function renderMarkersFromArray() {
+  clearMarkers();
+  markers.forEach(m => createMarker(m.x, m.y, false));
+}
+
+// --- ポインタ管理 ---
+// pointerdown
 wrapper.addEventListener('pointerdown', e => {
   if (!mainImg.src) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return; // 右クリック除外
-  if (!e.isPrimary) return; // 複数指操作除外
+  // 複数指は拒否（ピンチ中などはキャンセル）
+  activePointers.add(e.pointerId);
+  if (activePointers.size > 1) {
+    cancelTempMarker();
+    return;
+  }
+  if (!e.isPrimary) return;
+
+  // キャプチャを取る（pointer が要素外へ出ても up/cancel を受け取るため）
+  try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
 
   const rect = mainImg.getBoundingClientRect();
   const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
   const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
 
-  // 押した瞬間にマーカー作成
-  tempMarker = createMarker(xPercent, yPercent);
+  // 仮マーカーを作る
+  tempMarker = createMarker(xPercent, yPercent, true);
   startPos = { x: e.clientX, y: e.clientY };
   moved = false;
 });
 
+// pointermove
 wrapper.addEventListener('pointermove', e => {
   if (!startPos) return;
   const dx = e.clientX - startPos.x;
   const dy = e.clientY - startPos.y;
-  if (Math.sqrt(dx*dx + dy*dy) > 10) {
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  // 小さい動きは許容。ある閾値を超えたら「動かした」と見なす（スクロール・ズームなど）
+  if (dist > 10 && !moved) {
     moved = true;
-    // スクロールなどと判定されたらマーカー削除（キャンセル）
-    if (tempMarker) {
-      tempMarker.remove();
-      tempMarker = null;
-    }
+    cancelTempMarker();
   }
 });
 
+// pointerup
 wrapper.addEventListener('pointerup', e => {
-  if (!mainImg.src || !startPos) return;
-  e.preventDefault();
-
+  if (!mainImg.src) {
+    cleanupPointer(e);
+    return;
+  }
+  if (!startPos) {
+    cleanupPointer(e);
+    return;
+  }
+  // マーカー確定（動いていなければ）
   if (!moved && tempMarker) {
-    // 有効なクリックと判定
+    // 再計算して精度を上げる（画像の境界が変わっていた場合の補正）
     const rect = mainImg.getBoundingClientRect();
     const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
     const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+    // 永続データに追加
     markers.push({ x: xPercent, y: yPercent });
-    updateCount();
+    // 仮マーカーを確定化（.temp を外して位置とデータを更新）
+    tempMarker.classList.remove('temp');
+    tempMarker.style.left = xPercent + '%';
+    tempMarker.style.top = yPercent + '%';
+    tempMarker.dataset.x = String(xPercent);
+    tempMarker.dataset.y = String(yPercent);
     tempMarker = null;
-  } else if (moved && tempMarker) {
-    // 移動していた場合はマーカー削除
+    updateCount();
+  } else {
+    // 移動していた場合は仮マーカーを削除
+    cancelTempMarker();
+  }
+  cleanupPointer(e);
+});
+
+// pointercancel / lostpointercapture
+wrapper.addEventListener('pointercancel', e => {
+  cancelTempMarker();
+  cleanupPointer(e);
+});
+wrapper.addEventListener('lostpointercapture', e => {
+  cancelTempMarker();
+  cleanupPointer(e);
+});
+
+// --- 補助関数 ---
+function cancelTempMarker() {
+  if (tempMarker) {
     tempMarker.remove();
     tempMarker = null;
   }
   startPos = null;
-});
+  moved = false;
+}
+function cleanupPointer(e) {
+  // pointerとしての管理を解除
+  try { e.target.releasePointerCapture && e.target.releasePointerCapture(e.pointerId); } catch (err) {}
+  activePointers.delete(e.pointerId);
+  startPos = null;
+  moved = false;
+}
 
-// サイズ変更時に既存マーカー更新
-sizeInput.addEventListener('input', e => {
+// --- 外部イベントでキャンセル（ズーム・スクロール時の保険） ---
+// マウスホイール（PC のズームやスクロール時）
+wrapper.addEventListener('wheel', () => cancelTempMarker(), { passive: true });
+// ページスクロールやリサイズでキャンセル
+window.addEventListener('scroll', () => cancelTempMarker(), { passive: true });
+window.addEventListener('resize', () => {
+  // ビューポート変化で marker の位置がずれることは % 指定で吸収されるが仮マーカーはキャンセル
+  cancelTempMarker();
+  // （必要に応じて再描画）
+  renderMarkersFromArray();
+}, { passive: true });
+
+// visualViewport（ピンチズーム/viewport変化に対応）
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', () => {
+    cancelTempMarker();
+    renderMarkersFromArray();
+  }, { passive: true });
+  visualViewport.addEventListener('scroll', () => cancelTempMarker(), { passive: true });
+}
+
+// タッチで複数指が来た場合（念のため）
+document.addEventListener('touchstart', ev => {
+  if (ev.touches && ev.touches.length > 1) cancelTempMarker();
+}, { passive: true });
+
+// --- サイズスライダーで既存マーカー更新 ---
+sizeInput.addEventListener('input', () => {
   document.querySelectorAll('.marker').forEach(el => {
     el.style.width = sizeInput.value + 'px';
     el.style.height = sizeInput.value + 'px';
   });
 });
 
-// 戻るボタン
+// --- 戻るボタン ---
 undoBtn.addEventListener('click', () => {
   if (markers.length === 0) return;
   markers.pop();
+  // DOM上の最後のマーカーを削除
   const lastMarker = wrapper.querySelector('.marker:last-of-type');
   if (lastMarker) lastMarker.remove();
   updateCount();
-})
+});
+
+// --- 画像ロード後の補正（画像サイズ変化に応じてマーカー再描画） ---
+mainImg.addEventListener('load', () => {
+  // 既存データをDOMに反映（ファイル入れ替えのときは markers=[] してる）
+  renderMarkersFromArray();
+  cancelTempMarker();
+});
+
+// 初期化時にマーカー消去
+clearMarkers();
+
 </script>
 </body>
 </html>
